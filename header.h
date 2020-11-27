@@ -21,6 +21,7 @@ int commandSelector(char ***argvv, int argvc);
 
 /* Funciones de mandatos específicos */
 int cd(char **dir);
+int _umask(char **cmd);
 
 /* Variables globales */
 int mandatopid = -1;

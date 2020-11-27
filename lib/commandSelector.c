@@ -22,14 +22,19 @@
 
 int commandSelector(char ***argvv, int argvc) {
     if (argvc == 1) {
+        // Los comandos internos se ejecutan en el proceso del minishell.
         char **cmd = argvv[0];
-        if (strcmp(cmd[0], "cd") == 0) cd(cmd);
+        if (strcmp(cmd[0], "cd") == 0) return cd(cmd);
+        else if (strcmp(cmd[0], "umask") == 0) _umask(cmd);
         else if (strcmp(cmd[0], "exit") == 0) exit(0);
         else if (strcmp(cmd[0], "quit") == 0) exit(0);
-        else 
+        else {
+            // Tenemos un comando simple que no es interno.
+            // Lo ejecutamos en una subshell.
             if (fork() == 0) {
-                execvp(cmd[0], (char* const*)cmd);
+                exit(execvp(cmd[0], (char* const*)cmd));
             }
+        }
     }
     else {
         // Tenemos una secuencia de comandos o una redirección.

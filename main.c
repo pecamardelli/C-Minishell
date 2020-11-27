@@ -25,6 +25,7 @@
 
 /* Definición de los mandatos */
 #include "./commands/cd.c"
+#include "./commands/umask.c"
 
 extern int obtain_order();		/* See parser.y for description */
 

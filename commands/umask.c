@@ -19,39 +19,40 @@
  */
 
 #include "../header.h"
+#include "../utils/checkUmask.c"
 
-//int cd(char **argv, int argc) {
-int cd(char **dir) {
-	char *aux;
+int _umask(char **cmd) {
+    mode_t oldMask;
     // Se espera que la cantidad de argumentos más el nombre del comando
     // sea igual a 2.
-    int expectedArgs = 2;
+    int maxArgs = 2;
 
     // Conteo de argumentos.
     int argc = 0;
-    while(dir[++argc]) {}
+    while(cmd[++argc]) {}
 
-    if(argc > expectedArgs) {
-        perror("msh: cd: demasiados argumentos.\n");
+
+    if(argc > maxArgs) {
+        perror("msh: umask: demasiados argumentos.\n");
 		return 1;
     }
-    
-    if(strlen(dir[1]) >= MAX_PATH_LEN){
-		perror("msh: cd: nombre de directorio demasiado largo.\n");
-		return 1;
-	}
-    
-    if (dir[1]) aux = dir[1];
-	else aux = getenv("HOME");
 
-	if(chdir(aux) == -1){
-		perror("msh: cd: No existe el archivo o el directorio\n");
-		return 1;
-	}
+    if (cmd[1]) {
+        if(!checkUmask(cmd[1])) {
+            perror("msh: umask: formato de máscara inválido.\n");
+            return 1;
+        }
 
-    char ret[MAX_PATH_LEN];
-	getcwd(ret, MAX_PATH_LEN);
-	printf("%s\n",ret);
+        unsigned int mask = strtol(cmd[1], NULL, 8);
 
-	return 0;
+        umask(mask);
+        printf("Valor de la máscara cambiado a 0%o\n", mask);
+    }
+    else {
+        oldMask = umask(S_IRWXG);
+        printf("0%o\n", oldMask);
+        umask(oldMask);
+    }
+
+    return 0;
 }

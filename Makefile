@@ -17,11 +17,11 @@
 # DO NOT MODIFY THIS FILE
 #
 
-CC	= gcc
+CC		= gcc
 CFLAGS	= -Wall -g
 YACC	= bison --yacc
 YFLAGS	= -d
-LEX	= flex
+LEX		= flex
 LFLAGS	=
 
 OBJS	= parser.o scanner.o main.o
@@ -38,5 +38,5 @@ cleanall: clean
 	rm -f :* freefds* nofiles* killmyself* sigdfl*
 
 depend:
-	makedepend main.c parser.y scanner.l cd.c
+	makedepend main.c parser.y scanner.l
 
