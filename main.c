@@ -119,7 +119,7 @@ int main(void)
 			pid_t pid = fork();
 
 			if(pid == 0){
-				int ret = commandPipeline(argvv, argvc);
+				int ret = commandSelector(argvv, argvc);
 				char status[256];
 				sprintf(status, "status=%d", ret);
 				putenv(status);
@@ -133,7 +133,7 @@ int main(void)
 			}
 		}
 		else {
-			commandPipeline(argvv, argvc);
+			commandSelector(argvv, argvc);
 		}
 
 		int status;

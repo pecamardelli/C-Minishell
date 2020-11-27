@@ -30,35 +30,38 @@ int commandPipeline (char ***argvv, int argvc) {
 
 	/* Aquí se genera el árbol de procesos y tuberías para cada comando
 	a excepción del último.  */
-	for (i = 0; i < argvc-1; ++i) {
-		pipe(fd);
+	if (fork() == 0) {
 
-		/* 	Aquí pasamos los siguientes argumentos:
-				in:			El descriptor de lectura del proceso anterior para que sea utilizado
-							como entrada por el nuevo proceso.
-				fd[1]:		El descriptor de escritura por defecto.
-				argvv[i]:	El puntero al array de caracteres que contiene el comando
-							a ejecutar y sus argumentos.
-			
-			Nótese que f[1] es el "write end" de la tubería, el cual tomamos de la iteración previa.
-		*/
-	
-		newCommandProc(in, fd[1], argvv[i]);
+		for (i = 0; i < argvc-1; ++i) {
+			pipe(fd);
 
-		/* Ya no es necesario este descriptor ya que el proceso hijo escribe aquí  */
-		close(fd[1]);
+			/* 	Aquí pasamos los siguientes argumentos:
+					in:			El descriptor de lectura del proceso anterior para que sea utilizado
+								como entrada por el nuevo proceso.
+					fd[1]:		El descriptor de escritura por defecto.
+					argvv[i]:	El puntero al array de caracteres que contiene el comando
+								a ejecutar y sus argumentos.
+				
+				Nótese que f[1] es el "write end" de la tubería, el cual tomamos de la iteración previa.
+			*/
 		
-		/* Mantemenos el "read end" de la tubería para que el próximo proceso hijo
-			lea de allí.  */
-		in = fd[0];
-	}
-	/* Por último, establecemos stdin como "read end" de la tubería anterior */  
-	if (in != 0)
-		dup2(in, 0);
+			newCommandProc(in, fd[1], argvv[i]);
 
-	/* Ahora, el proceso actual correrá el último comando y retornará
-		el valor de la secuencia. */
-	return commandSelector(argvv[i]);
-	
-	//return execvp(argvv[i][0], (char* const*)argvv[i]);
+			/* Ya no es necesario este descriptor ya que el proceso hijo escribe aquí  */
+			close(fd[1]);
+			
+			/* Mantemenos el "read end" de la tubería para que el próximo proceso hijo
+				lea de allí.  */
+			in = fd[0];
+		}
+		/* Por último, establecemos stdin como "read end" de la tubería anterior */  
+		if (in != 0)
+			dup2(in, 0);
+
+		/* Ahora, el proceso actual correrá el último comando y retornará
+			el valor de la secuencia. */
+		return execvp(argvv[i][0], (char* const*)argvv[i]);
+	}
+
+	return 0;
 }

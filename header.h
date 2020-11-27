@@ -17,7 +17,7 @@
 /* Funciones del núcleo y utilidades */
 int commandPipeline (char ***argvv, int argvc);
 int newCommandProc(int in, int out, char **cmd);
-int commandSelector(char **cmd);
+int commandSelector(char ***argvv, int argvc);
 
 /* Funciones de mandatos específicos */
 int cd(char **dir);

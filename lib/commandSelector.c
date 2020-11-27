@@ -20,14 +20,20 @@
 
 #include "../header.h"
 
-int commandSelector(char **cmd) {
-    if (strcmp(cmd[0], "cd") == 0) cd(cmd);
-    else if (strcmp(cmd[0], "exit") == 0) exit(0);
-    else if (strcmp(cmd[0], "quit") == 0) exit(0);
+int commandSelector(char ***argvv, int argvc) {
+    if (argvc == 1) {
+        char **cmd = argvv[0];
+        if (strcmp(cmd[0], "cd") == 0) cd(cmd);
+        else if (strcmp(cmd[0], "exit") == 0) exit(0);
+        else if (strcmp(cmd[0], "quit") == 0) exit(0);
+        else 
+            if (fork() == 0) {
+                execvp(cmd[0], (char* const*)cmd);
+            }
+    }
     else {
-        if (fork() == 0) {
-            return execvp(cmd[0], (char* const*)cmd);
-        }
+        // Tenemos una secuencia de comandos o una redirección.
+        commandPipeline(argvv, argvc);
     }
     return 0;
 }
