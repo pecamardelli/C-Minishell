@@ -24,8 +24,10 @@ int commandSelector(char ***argvv, int argvc) {
     if (argvc == 1) {
         // Los comandos internos se ejecutan en el proceso del minishell.
         char **cmd = argvv[0];
-        if (strcmp(cmd[0], "cd") == 0) return cd(cmd);
+        if (strcmp(cmd[0], "cd") == 0) return _cd(cmd);
         else if (strcmp(cmd[0], "umask") == 0) _umask(cmd);
+        else if (strcmp(cmd[0], "times") == 0) _times(cmd);
+        else if (strcmp(cmd[0], "read") == 0) _read(cmd);
         else if (strcmp(cmd[0], "exit") == 0) exit(0);
         else if (strcmp(cmd[0], "quit") == 0) exit(0);
         else {

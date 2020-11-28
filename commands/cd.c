@@ -21,20 +21,10 @@
 #include "../header.h"
 
 //int cd(char **argv, int argc) {
-int cd(char **dir) {
+int _cd(char **dir) {
 	char *aux;
-    // Se espera que la cantidad de argumentos más el nombre del comando
-    // sea igual a 2.
-    int expectedArgs = 2;
-
-    // Conteo de argumentos.
-    int argc = 0;
-    while(dir[++argc]) {}
-
-    if(argc > expectedArgs) {
-        perror("msh: cd: demasiados argumentos.\n");
-		return 1;
-    }
+    // Se espera que la cantidad de argumentos sea 1.
+    argCount(dir, 1);
     
     if(strlen(dir[1]) >= MAX_PATH_LEN){
 		perror("msh: cd: nombre de directorio demasiado largo.\n");

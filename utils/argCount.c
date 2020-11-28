@@ -18,29 +18,19 @@
  * THIS FILE IS TO BE MODIFIED
  */
 
-#include "../header.h"
+int argCount(char **cmd, int expectedArgs) {
+    // Conteo de argumentos.
+    int argc = -1;
+    while(cmd[++argc]) {}
 
-int _umask(char **cmd) {
-    mode_t oldMask;
-    // Se espera que la cantidad de argumentos sea 1.
-    argCount(cmd, 1);
-
-    if (cmd[1]) {
-        if(!checkUmask(cmd[1])) {
-            perror("msh: umask: formato de máscara inválido.\n");
-            return 1;
-        }
-
-        unsigned int mask = strtol(cmd[1], NULL, 8);
-
-        umask(mask);
-        printf("Valor de la máscara cambiado a 0%o\n", mask);
-    }
-    else {
-        oldMask = umask(S_IRWXG);
-        printf("0%o\n", oldMask);
-        umask(oldMask);
+    if(expectedArgs >= 0 && argc > expectedArgs) {
+        char msg[32];
+        sprintf(msg, "msh: %s: demasiados argumentos.\n", cmd[0]);
+        perror(msg);
+		return -1;
     }
 
-    return 0;
+    // Restamos 1 dado que el primer elemento del array cmd es
+    // el nombre del comando.
+    return argc - 1;
 }

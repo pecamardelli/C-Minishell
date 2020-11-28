@@ -20,26 +20,29 @@
 
 #include "../header.h"
 
-int _umask(char **cmd) {
-    mode_t oldMask;
-    // Se espera que la cantidad de argumentos sea 1.
-    argCount(cmd, 1);
+int _read(char **cmd) {
 
-    if (cmd[1]) {
-        if(!checkUmask(cmd[1])) {
-            perror("msh: umask: formato de máscara inválido.\n");
-            return 1;
-        }
+    int argc = argCount(cmd, -1);
 
-        unsigned int mask = strtol(cmd[1], NULL, 8);
-
-        umask(mask);
-        printf("Valor de la máscara cambiado a 0%o\n", mask);
+    if (argc < 1) {
+        perror("msh: read: ingrese como mínimo un nombre de variable.");
+        return(1);
     }
-    else {
-        oldMask = umask(S_IRWXG);
-        printf("0%o\n", oldMask);
-        umask(oldMask);
+
+    char line[MAX_LINE_LEN];
+    printf("Ingrese los valores a asignar a la(s) variable(s):\n");
+    scanf("%s", line);
+
+    // Tokenización de la línea ingresada
+    const char *delimiters = " ";
+    char *args[MAX_READ_ARGS];
+    char *token = strtok(line, delimiters);
+    int index = 0;
+
+    while(token != NULL && index < MAX_READ_ARGS) {
+        args[++index] = token;
+        printf("%s\n", token);
+        token = strtok(NULL, delimiters);
     }
 
     return 0;

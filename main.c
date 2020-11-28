@@ -19,6 +19,12 @@
  */
 
 #include "header.h"
+
+/* Utilidades */
+#include "./utils/checkUmask.c"
+#include "./utils/argCount.c"
+
+/* Funciones principales */
 #include "./lib/newCommandProc.c"
 #include "./lib/commandPipeline.c"
 #include "./lib/commandSelector.c"
@@ -26,6 +32,8 @@
 /* Definición de los mandatos */
 #include "./commands/cd.c"
 #include "./commands/umask.c"
+#include "./commands/times.c"
+#include "./commands/read.c"
 
 extern int obtain_order();		/* See parser.y for description */
 
