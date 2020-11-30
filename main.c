@@ -271,6 +271,9 @@ int _read(char **cmd) {
 				perror("msh: read: error al establecer variable de entorno.");
 				setEnv("status", "2");
 			}
+			else {
+				printf("Putenved: %s\n", getenv(cmd[index]));
+			}
 			//printf("%s: %s\n", cmd[index], getenv(cmd[index]));
 		}
 		else {
@@ -445,7 +448,6 @@ int commandPipeline (char ***argvv, int argvc) {
 	/* Aquí se genera el árbol de procesos y tuberías para cada comando
 	a excepción del último.  */
 	if (fork() == 0) {
-
 		for (i = 0; i < argvc-1; ++i) {
 			pipe(fd);
 
@@ -458,7 +460,6 @@ int commandPipeline (char ***argvv, int argvc) {
 				
 				Nótese que f[1] es el "write end" de la tubería, el cual tomamos de la iteración previa.
 			*/
-		
 			newCommandProc(in, fd[1], argvv[i]);
 
 			/* Ya no es necesario este descriptor ya que el proceso hijo escribe aquí  */
