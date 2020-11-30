@@ -1,0 +1,3 @@
+- Implementada la expansión de nombres de fichero con el comodín ?
+
+    Se ignoran el asterisco y el corchete.

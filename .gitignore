@@ -1,6 +1,9 @@
 # Extras folder
 extras/
 
+# Zip files
+*.zip
+
 # Prerequisites
 *.d
 

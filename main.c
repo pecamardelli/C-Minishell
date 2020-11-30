@@ -34,6 +34,9 @@
 #include <sys/times.h>
 #include <time.h>
 #include <stdint.h>
+#include <pwd.h>
+#include <regex.h>
+#include <glob.h>
 
 #define MAX_PATH_LEN    512
 #define MAX_LINE_LEN    256
@@ -41,22 +44,37 @@
 
 /* Variables globales */
 int mandatopid = -1;
-const char *internalCommands[] = {
-    "cd",
-    "umask",
-    "time",
-    "read",
-    "exit",
-    "quit"
-};
+int bg;
 
 #endif
 
 extern int obtain_order();		/* See parser.y for description */
 
+void setEnv(char *varName, char *value) {
+	if (!bg) {
+		char var[256];
+		sprintf(var, "%s=%s", varName, value);
+		putenv(var);
+	}
+}
+
 void functionSignal(int signum){
 	if(mandatopid != -1){
+		printf("Killing %d...\n", mandatopid);
 		kill(mandatopid, SIGKILL);
+	}
+}
+
+void exitHandler(int status) {
+	switch (status) {
+		case EXIT_SUCCESS:
+			setEnv("status", "0");
+			exit(EXIT_SUCCESS);
+			break;
+		default:
+			setEnv("status", "1");
+			exit(EXIT_FAILURE);
+			break;
 	}
 }
 
@@ -66,13 +84,13 @@ void functionSignal(int signum){
 
 int argCount(char **cmd, int expectedArgs) {
     // Conteo de argumentos.
-    int argc = -1;
+    int argc = 0;
     while(cmd[++argc]) {}
 
-    if(expectedArgs >= 0 && argc > expectedArgs) {
-        char msg[32];
-        sprintf(msg, "msh: %s: demasiados argumentos.\n", cmd[0]);
-        perror(msg);
+    if(expectedArgs >= 0 && argc-1 > expectedArgs) {
+        char errMsg[32];
+        sprintf(errMsg, "msh: %s: demasiados argumentos.\n", cmd[0]);
+        perror(errMsg);
 		return -1;
     }
 
@@ -94,6 +112,87 @@ unsigned char checkUmask(char *mask) {
     return 255;
 }
 
+// METACARACTERES
+// Chequeo de argumentos de comandos internos
+int argChecker(char ***argvv) {
+	int argIndex = 0;
+	int cmdIndex = 1;
+	struct passwd *user;
+
+	while(argvv[argIndex]) {
+		char **cmd = argvv[argIndex];
+		while(cmd[cmdIndex]) {
+			// Chequeamos la virgulilla o tilde.
+			if (cmd[cmdIndex][0] == 0x7e) {
+				char name[MAX_LINE_LEN];
+				sscanf(cmd[cmdIndex], "~%[_a-zA-Z0-9]", name);
+
+				// En este punto, sabemos que tenemos un nombre de usuario válido
+				user = getpwnam(name);
+				if (user) {
+					cmd[cmdIndex] = realloc(cmd[cmdIndex], strlen(user->pw_dir) * sizeof(char));
+					strcpy(cmd[cmdIndex], user->pw_dir);
+				}
+				else {
+					char *var = getenv("HOME");
+					cmd[cmdIndex] = realloc(cmd[cmdIndex], strlen(var) * sizeof(char));
+					strcpy(cmd[cmdIndex], var);
+				}
+			}
+			
+			// Chequeamos el signo dólar.
+			if (cmd[cmdIndex][0] == 0x24) {
+				char varName[MAX_LINE_LEN];
+				sscanf(cmd[cmdIndex], "$%[_a-zA-Z0-9]", varName);
+
+				char *var = getenv(varName);
+				if (var) {
+					cmd[cmdIndex] = realloc(cmd[cmdIndex], strlen(getenv(varName)) * sizeof(char)+1);
+					strcpy(cmd[cmdIndex], var);
+				}
+			}
+
+			// Chequeamos la expansión de nombres de fichero
+			char *argument = cmd[cmdIndex];
+			int subIndex = 0;
+			int noExpand = 0;
+			int question = 0;
+
+			while(argument[subIndex]) {
+				// Buscamos la barra dentro del argumento.
+				if (argument[subIndex] == 0x2F) noExpand = 1;	// Barra (/)
+				if (argument[subIndex] == 0x2A) noExpand = 1;	// Asterisco (*)
+				if (argument[subIndex] == 0x5B) noExpand = 1;	// Corchete ([)
+				if (argument[subIndex] == 0x3F) question = 1;
+				subIndex++;
+			}
+
+			// Se procederá a la expansión sólo si no se encuentra una barra,
+			// un asterisco o un corchete y sí se encuentra un signo de interrogación.
+			if (noExpand == 0 && question == 1) {
+				glob_t globbuf;
+				globbuf.gl_offs = 0;
+
+				if (glob(argument, GLOB_DOOFFS, NULL, &globbuf) == 0) {
+					// Se encontraron nombres de archivo.
+					int i = 0;
+
+					while(globbuf.gl_pathv[i]) {
+						cmd[cmdIndex+globbuf.gl_pathc] = cmd[cmdIndex+i];
+						cmd[cmdIndex+i] = globbuf.gl_pathv[i];
+						i++;
+					}
+				}
+			}
+
+			cmdIndex++;
+		}
+		argIndex++;
+	}
+
+	return 0;
+}
+
 // #######################################################
 // # ------- DEFINICIÓN DE LOS COMANDOS INTERNOS ------- #
 // #######################################################
@@ -102,25 +201,27 @@ unsigned char checkUmask(char *mask) {
 int _cd(char **dir) {
 	char *aux;
     // Se espera que la cantidad de argumentos sea 1.
-    argCount(dir, 1);
+    if(argCount(dir, 1) == -1) return 1;
     
     if(strlen(dir[1]) >= MAX_PATH_LEN){
 		perror("msh: cd: nombre de directorio demasiado largo.\n");
+		setEnv("status", "1");
 		return 1;
 	}
-    
+
     if (dir[1]) aux = dir[1];
 	else aux = getenv("HOME");
 
 	if(chdir(aux) == -1){
-		perror("msh: cd: No existe el archivo o el directorio\n");
+		perror("msh: cd: No existe el archivo o el directorio.\n");
+		setEnv("status", "2");
 		return 1;
 	}
 
     char ret[MAX_PATH_LEN];
 	getcwd(ret, MAX_PATH_LEN);
 	printf("%s\n",ret);
-
+	setEnv("status", "0");
 	return 0;
 }
 
@@ -130,6 +231,7 @@ int _read(char **cmd) {
 
     if (argc < 1) {
         perror("msh: read: ingrese como mínimo un nombre de variable.");
+		setEnv("status", "1");
         return(1);
     }
 
@@ -154,9 +256,9 @@ int _read(char **cmd) {
 
 			if (putenv(toEnv) != 0) {
 				perror("msh: read: error al establecer variable de entorno.");
+				setEnv("status", "2");
 			}
-			printf("%s: %s\n", cmd[index], getenv(cmd[index]));
-			//printf("%s: %s\n", cmd[index], token);
+			//printf("%s: %s\n", cmd[index], getenv(cmd[index]));
 		}
 		else {
 			break;
@@ -165,6 +267,7 @@ int _read(char **cmd) {
         token = strtok(NULL, delimiters);
     }
 
+	setEnv("status", "0");
     return 0;
 }
 
@@ -178,6 +281,7 @@ int _times(char **cmd) {
     if (cmd[1]) {
         // Obtenemos el momento inicial del proceso.
         if (clock_gettime(CLOCK_REALTIME, &realTime1) == -1) {
+			setEnv("status", "1");
             perror("clock_gettime error.");
         }
 
@@ -187,10 +291,12 @@ int _times(char **cmd) {
         }
 
         if (wait(&status) == -1)
+			setEnv("status", "2");
             perror("wait() error");
 
         // Obtenemos el momento final del proceso.
         if (clock_gettime(CLOCK_REALTIME, &realTime2) == -1) {
+			setEnv("status", "3");
             perror("clock_gettime error.");
         }
 
@@ -248,6 +354,7 @@ int _times(char **cmd) {
             total_rtime_msec);
     }
 
+	setEnv("status", "0");
     return 0;
 }
 
@@ -259,6 +366,7 @@ int _umask(char **cmd) {
 
     if (cmd[1]) {
         if(!checkUmask(cmd[1])) {
+			setEnv("status", "1");
             perror("msh: umask: formato de máscara inválido.\n");
             return 1;
         }
@@ -274,6 +382,7 @@ int _umask(char **cmd) {
         umask(oldMask);
     }
 
+	setEnv("status", "0");
     return 0;
 }
 
@@ -339,36 +448,46 @@ int commandPipeline (char ***argvv, int argvc) {
 
 		/* Ahora, el proceso actual correrá el último comando y retornará
 			el valor de la secuencia. */
-		return execvp(argvv[i][0], (char* const*)argvv[i]);
+		if(execvp(argvv[i][0], (char* const*)argvv[i]) == -1)
+			exitHandler(EXIT_FAILURE);
+		else
+			exitHandler(EXIT_SUCCESS);
 	}
 
 	return 0;
 }
 
-int commandSelector(char ***argvv, int argvc) {
 // Selector de comandos. Distingue entre comandos internos y otros.
+int commandSelector(char ***argvv, int argvc) {
+	argChecker(argvv);
+
     if (argvc == 1) {
         // Los comandos internos se ejecutan en el proceso del minishell.
         char **cmd = argvv[0];
-        if (strcmp(cmd[0], "cd") == 0) return _cd(cmd);
+        if (strcmp(cmd[0], "cd") == 0) _cd(cmd);
         else if (strcmp(cmd[0], "umask") == 0) _umask(cmd);
         else if (strcmp(cmd[0], "times") == 0) _times(cmd);
         else if (strcmp(cmd[0], "read") == 0) _read(cmd);
-        else if (strcmp(cmd[0], "exit") == 0) exit(0);
-        else if (strcmp(cmd[0], "quit") == 0) exit(0);
+        else if (strcmp(cmd[0], "exit") == 0) exit(EXIT_SUCCESS);
+        else if (strcmp(cmd[0], "quit") == 0) exit(EXIT_SUCCESS);
         else {
             // Tenemos un comando simple que no es interno.
             // Lo ejecutamos en una subshell.
-            if (fork() == 0) {
-                exit(execvp(cmd[0], (char* const*)cmd));
+			pid_t pid = fork();
+            if (pid == 0) {
+                if(execvp(cmd[0], (char* const*)cmd) == -1)
+					exitHandler(EXIT_FAILURE);
+				else exitHandler(EXIT_SUCCESS);
             }
+
+			return pid;
         }
     }
     else {
         // Tenemos una secuencia de comandos o una redirección.
-        commandPipeline(argvv, argvc);
+        return commandPipeline(argvv, argvc);
     }
-    return 0;
+    return -1;
 }
 
 int main(void)
@@ -376,7 +495,6 @@ int main(void)
 	char ***argvv = NULL;
 	int argvc;
 	char *filev[3] = { NULL, NULL, NULL };
-	int bg;
 	int ret;
 
 	int fd_in = -1,fd_out = -1, fd_err = -1;
@@ -437,10 +555,10 @@ int main(void)
 			pid_t pid = fork();
 
 			if(pid == 0){
-				int ret = commandSelector(argvv, argvc);
-				char status[256];
-				sprintf(status, "status=%d", ret);
-				putenv(status);
+				signal(SIGINT, SIG_IGN);
+				signal(SIGQUIT, SIG_IGN);
+
+				commandSelector(argvv, argvc);
 				exit(ret);
 			}
 			else {
