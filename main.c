@@ -83,17 +83,10 @@ void exitHandler(int status) {
 // # ------- UTILIDADES ------- #
 // ##############################
 
-int argCount(char **cmd, int expectedArgs) {
+int argCount(char **cmd) {
     // Conteo de argumentos.
     int argc = 0;
-    while(cmd[++argc]) {}
-
-    if(expectedArgs >= 0 && argc-1 > expectedArgs) {
-        char errMsg[32];
-        sprintf(errMsg, "msh: %s: demasiados argumentos.\n", cmd[0]);
-        perror(errMsg);
-		return -1;
-    }
+    while(cmd[argc]) argc++;
 
     // Restamos 1 dado que el primer elemento del array cmd es
     // el nombre del comando.
@@ -123,6 +116,12 @@ int argChecker(char ***argvv) {
 	while(argvv[argIndex]) {
 		char **cmd = argvv[argIndex];
 		cmdIndex = 1;
+
+		if (!cmd[cmdIndex])	{
+			argIndex++;
+			continue;
+		}
+
 		while(cmd[cmdIndex]) {
 			// Chequeamos la virgulilla o tilde.
 			if (cmd[cmdIndex][0] == 0x7e) {
@@ -200,23 +199,36 @@ int argChecker(char ***argvv) {
 
 // COMANDO CD
 int _cd(char **dir) {
-	char *aux;
     // Se espera que la cantidad de argumentos sea 1.
-    if(argCount(dir, 1) == -1) return 1;
-    
-    if(strlen(dir[1]) >= MAX_PATH_LEN){
-		perror("msh: cd: nombre de directorio demasiado largo.\n");
+	int argc = argCount(dir);
+
+	if (argc > 1) {
+		perror("msh: cd: Demasiados argumentos.\n");
 		setEnv("status", "1");
 		return 1;
 	}
-	
-    if (dir[1]) aux = dir[1];
-	else aux = getenv("HOME");
+	// Comando cd sin argumentos. Cambiar al directorio de la
+	// variable $HOME.
+    if(argc == 0) {
+		if(chdir(getenv("HOME")) == -1){
+			perror("msh: cd: No existe el archivo o el directorio.\n");
+			setEnv("status", "2");
+			return 2;
+		}
+		return 0;
+	}
 
-	if(chdir(aux) == -1){
+	// Llegado a este punto, significa que tenemos un argumento.
+    if(strlen(dir[1]) >= MAX_PATH_LEN){
+		perror("msh: cd: nombre de directorio demasiado largo.\n");
+		setEnv("status", "3");
+		return 3;
+	}
+
+	if(chdir(dir[1]) == -1){
 		perror("msh: cd: No existe el archivo o el directorio.\n");
 		setEnv("status", "2");
-		return 1;
+		return 2;
 	}
 
     char ret[MAX_PATH_LEN];
@@ -228,12 +240,12 @@ int _cd(char **dir) {
 
 // COMANDO READ
 int _read(char **cmd) {
-    int argc = argCount(cmd, -1);
+    int argc = argCount(cmd);
 
     if (argc < 1) {
         perror("msh: read: ingrese como mínimo un nombre de variable.");
 		setEnv("status", "1");
-        return(1);
+        return 1;
     }
 
     char line[MAX_LINE_LEN];
@@ -363,13 +375,19 @@ int _times(char **cmd) {
 int _umask(char **cmd) {
     mode_t oldMask;
     // Se espera que la cantidad de argumentos sea 1.
-    argCount(cmd, 1);
+	int argc = argCount(cmd);
+
+	if (argc > 1) {
+		perror("msh: umask: Demasiados argumentos.\n");
+		setEnv("status", "1");
+        return 1;
+	}
 
     if (cmd[1]) {
         if(!checkUmask(cmd[1])) {
-			setEnv("status", "1");
+			setEnv("status", "2");
             perror("msh: umask: formato de máscara inválido.\n");
-            return 1;
+            return 2;
         }
 
         unsigned int mask = strtol(cmd[1], NULL, 8);
