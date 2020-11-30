@@ -271,10 +271,6 @@ int _read(char **cmd) {
 				perror("msh: read: error al establecer variable de entorno.");
 				setEnv("status", "2");
 			}
-			else {
-				printf("Putenved: %s\n", getenv(cmd[index]));
-			}
-			//printf("%s: %s\n", cmd[index], getenv(cmd[index]));
 		}
 		else {
 			break;
