@@ -1,6 +1,9 @@
 # Extras folder
 extras/
 
+# Test folder
+test/
+
 # Zip files
 *.zip
 
