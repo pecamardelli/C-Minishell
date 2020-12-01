@@ -37,6 +37,7 @@
 #include <pwd.h>
 #include <regex.h>
 #include <glob.h>
+#include <errno.h>
 
 #define MAX_PATH_LEN    512
 #define MAX_LINE_LEN    256
@@ -82,17 +83,10 @@ void exitHandler(int status) {
 // # ------- UTILIDADES ------- #
 // ##############################
 
-int argCount(char **cmd, int expectedArgs) {
+int argCount(char **cmd) {
     // Conteo de argumentos.
     int argc = 0;
-    while(cmd[++argc]) {}
-
-    if(expectedArgs >= 0 && argc-1 > expectedArgs) {
-        char errMsg[32];
-        sprintf(errMsg, "msh: %s: demasiados argumentos.\n", cmd[0]);
-        perror(errMsg);
-		return -1;
-    }
+    while(cmd[argc]) argc++;
 
     // Restamos 1 dado que el primer elemento del array cmd es
     // el nombre del comando.
@@ -116,11 +110,18 @@ unsigned char checkUmask(char *mask) {
 // Chequeo de argumentos de comandos internos
 int argChecker(char ***argvv) {
 	int argIndex = 0;
-	int cmdIndex = 1;
+	int cmdIndex;
 	struct passwd *user;
 
 	while(argvv[argIndex]) {
 		char **cmd = argvv[argIndex];
+		cmdIndex = 1;
+
+		if (!cmd[cmdIndex])	{
+			argIndex++;
+			continue;
+		}
+
 		while(cmd[cmdIndex]) {
 			// Chequeamos la virgulilla o tilde.
 			if (cmd[cmdIndex][0] == 0x7e) {
@@ -139,7 +140,6 @@ int argChecker(char ***argvv) {
 					strcpy(cmd[cmdIndex], var);
 				}
 			}
-			
 			// Chequeamos el signo dólar.
 			if (cmd[cmdIndex][0] == 0x24) {
 				char varName[MAX_LINE_LEN];
@@ -199,23 +199,36 @@ int argChecker(char ***argvv) {
 
 // COMANDO CD
 int _cd(char **dir) {
-	char *aux;
     // Se espera que la cantidad de argumentos sea 1.
-    if(argCount(dir, 1) == -1) return 1;
-    
-    if(strlen(dir[1]) >= MAX_PATH_LEN){
-		perror("msh: cd: nombre de directorio demasiado largo.\n");
+	int argc = argCount(dir);
+
+	if (argc > 1) {
+		perror("msh: cd: Demasiados argumentos.\n");
 		setEnv("status", "1");
 		return 1;
 	}
+	// Comando cd sin argumentos. Cambiar al directorio de la
+	// variable $HOME.
+    if(argc == 0) {
+		if(chdir(getenv("HOME")) == -1){
+			perror("msh: cd: No existe el archivo o el directorio.\n");
+			setEnv("status", "2");
+			return 2;
+		}
+		return 0;
+	}
 
-    if (dir[1]) aux = dir[1];
-	else aux = getenv("HOME");
+	// Llegado a este punto, significa que tenemos un argumento.
+    if(strlen(dir[1]) >= MAX_PATH_LEN){
+		perror("msh: cd: nombre de directorio demasiado largo.\n");
+		setEnv("status", "3");
+		return 3;
+	}
 
-	if(chdir(aux) == -1){
+	if(chdir(dir[1]) == -1){
 		perror("msh: cd: No existe el archivo o el directorio.\n");
 		setEnv("status", "2");
-		return 1;
+		return 2;
 	}
 
     char ret[MAX_PATH_LEN];
@@ -227,12 +240,12 @@ int _cd(char **dir) {
 
 // COMANDO READ
 int _read(char **cmd) {
-    int argc = argCount(cmd, -1);
+    int argc = argCount(cmd);
 
     if (argc < 1) {
         perror("msh: read: ingrese como mínimo un nombre de variable.");
 		setEnv("status", "1");
-        return(1);
+        return 1;
     }
 
     char line[MAX_LINE_LEN];
@@ -253,12 +266,11 @@ int _read(char **cmd) {
         if (cmd[index]) {
 			char toEnv[MAX_LINE_LEN];
 			sprintf(toEnv, "%s=%s", cmd[index], token);
-
+			
 			if (putenv(toEnv) != 0) {
 				perror("msh: read: error al establecer variable de entorno.");
 				setEnv("status", "2");
 			}
-			//printf("%s: %s\n", cmd[index], getenv(cmd[index]));
 		}
 		else {
 			break;
@@ -362,13 +374,19 @@ int _times(char **cmd) {
 int _umask(char **cmd) {
     mode_t oldMask;
     // Se espera que la cantidad de argumentos sea 1.
-    argCount(cmd, 1);
+	int argc = argCount(cmd);
+
+	if (argc > 1) {
+		perror("msh: umask: Demasiados argumentos.\n");
+		setEnv("status", "1");
+        return 1;
+	}
 
     if (cmd[1]) {
         if(!checkUmask(cmd[1])) {
-			setEnv("status", "1");
+			setEnv("status", "2");
             perror("msh: umask: formato de máscara inválido.\n");
-            return 1;
+            return 2;
         }
 
         unsigned int mask = strtol(cmd[1], NULL, 8);
@@ -411,7 +429,14 @@ int newCommandProc(int in, int out, char **cmd) {
 /*	Implementación de la cadena de mandatos.  */
 int commandPipeline (char ***argvv, int argvc) {
 	int i;
-	int in, fd[2];
+	int in;
+	int fd[2];
+
+	// Se crean estas tuberías auxiliares para retornar el último
+	// comando y sus argumentos, en caso de que sean internos, para
+	// ser ejecutados por el propio minishell.
+	int auxPipes[2];
+	pipe(auxPipes);
 
 	/* El primer proceso debe recibir su entrada del descriptor original 0. */
 	in = 0;
@@ -419,7 +444,6 @@ int commandPipeline (char ***argvv, int argvc) {
 	/* Aquí se genera el árbol de procesos y tuberías para cada comando
 	a excepción del último.  */
 	if (fork() == 0) {
-
 		for (i = 0; i < argvc-1; ++i) {
 			pipe(fd);
 
@@ -432,7 +456,6 @@ int commandPipeline (char ***argvv, int argvc) {
 				
 				Nótese que f[1] es el "write end" de la tubería, el cual tomamos de la iteración previa.
 			*/
-		
 			newCommandProc(in, fd[1], argvv[i]);
 
 			/* Ya no es necesario este descriptor ya que el proceso hijo escribe aquí  */
@@ -446,12 +469,41 @@ int commandPipeline (char ***argvv, int argvc) {
 		if (in != 0)
 			dup2(in, 0);
 
+		// Si el último comando es interno, leer la tubería y enviar
+		// lo leido al preceso principal.
+		if (strcmp(argvv[i][0], "cd") == 0 ||
+			strcmp(argvv[i][0], "umask") == 0 ||
+			strcmp(argvv[i][0], "times") == 0 ||
+			strcmp(argvv[i][0], "read") == 0) {
+			char buf[MAX_LINE_LEN];
+			int bytes = read(0, buf, MAX_LINE_LEN);
+			close(auxPipes[0]);
+			write(auxPipes[1],buf, bytes-1);
+			exit(0);
+		}
 		/* Ahora, el proceso actual correrá el último comando y retornará
 			el valor de la secuencia. */
 		if(execvp(argvv[i][0], (char* const*)argvv[i]) == -1)
 			exitHandler(EXIT_FAILURE);
 		else
 			exitHandler(EXIT_SUCCESS);
+	}
+
+	char buf[MAX_LINE_LEN] = "";
+	close(auxPipes[1]);
+	int bytes = read(auxPipes[0], buf, MAX_LINE_LEN);
+
+	if (argvv[argvc-1][1] == NULL) {
+		argvv[argvc-1][1] = (char*) malloc (bytes * sizeof(char));
+	}
+
+	strncpy(argvv[argvc-1][1], buf, bytes);
+
+	if (bytes > 0) {
+		if (strcmp(argvv[argvc-1][0], "cd") == 0) _cd(argvv[argvc-1]);
+		if (strcmp(argvv[argvc-1][0], "umask") == 0) _umask(argvv[argvc-1]);
+		if (strcmp(argvv[argvc-1][0], "times") == 0) _times(argvv[argvc-1]);
+		if (strcmp(argvv[argvc-1][0], "read") == 0) _read(argvv[argvc-1]);
 	}
 
 	return 0;

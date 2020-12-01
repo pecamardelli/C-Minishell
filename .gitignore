@@ -1,7 +1,10 @@
 # Extras folder
 extras/
 
-# Test folder
+# Binary file
+msh
+
+# Tests folder
 test/
 
 # Zip files
