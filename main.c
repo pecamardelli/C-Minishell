@@ -67,17 +67,11 @@ void functionSignal(int signum){
 	}
 }
 
-void exitHandler(int status) {
-	switch (status) {
-		case EXIT_SUCCESS:
-			setEnv("status", "0");
-			exit(EXIT_SUCCESS);
-			break;
-		default:
-			setEnv("status", "1");
-			exit(EXIT_FAILURE);
-			break;
-	}
+void set_bg_pid(pid_t pid) {
+	char bgpid[MAX_LINE_LEN];
+	sprintf(bgpid, "bgpid=%d", pid);
+	putenv(bgpid);
+	fprintf(stderr,"[%d]\n", pid);
 }
 
 // ##############################
@@ -123,14 +117,14 @@ unsigned char is_internal(char *cmd) {
 
 // METACARACTERES
 // Chequeo de argumentos de comandos internos
-int arg_checker(char ***argvv) {
+void arg_checker(char ***argvv) {
 	int argIndex = 0;
 	int cmdIndex;
 	struct passwd *user;
 
 	while(argvv[argIndex]) {
 		char **cmd = argvv[argIndex];
-		cmdIndex = 1;
+		cmdIndex = 0;
 
 		if (!cmd[cmdIndex])	{
 			argIndex++;
@@ -170,7 +164,6 @@ int arg_checker(char ***argvv) {
 
 				cmd[cmdIndex] = realloc(cmd[cmdIndex], strlen(line) * sizeof(char) + 1);
 				sprintf(cmd[cmdIndex], "%s", line);
-
 			}
 
 			// Buscamos el signo dólar.
@@ -230,13 +223,10 @@ int arg_checker(char ***argvv) {
 					}
 				}
 			}
-
 			cmdIndex++;
 		}
 		argIndex++;
 	}
-
-	return 0;
 }
 
 // #######################################################
@@ -283,11 +273,6 @@ int _cd(char **dir) {
 int _read(char **cmd) {
     int argc = arg_count(cmd);
 
-    if (argc < 1) {
-        perror("msh: read: ingrese como mínimo un nombre de variable.");
-        return 1;
-    }
-
     char line[MAX_LINE_LEN];
     printf("Ingrese los valores a asignar a la(s) variable(s):\n");
     //scanf("%s", line);
@@ -296,6 +281,11 @@ int _read(char **cmd) {
 	// este comportamiento.
 	fflush(stdin);
 	scanf("%[^\n\r]", line);
+
+    if (argc < 1) {
+        perror("msh: read: ingrese como mínimo un nombre de variable.");
+        return 1;
+    }
 
     // Tokenización de la línea ingresada.
 	// Usamos el espacio en blanco y el tabulador como delimitadores.
@@ -309,7 +299,7 @@ int _read(char **cmd) {
 			const size_t var_len = (strlen(cmd[index]) + strlen(token) + 1) * sizeof(char);
 			toEnv = (char*) malloc (var_len);
 			sprintf(toEnv, "%s=%s", cmd[index], token);
-			printf("%s\n", toEnv);
+			
 			if (putenv(toEnv) != 0) {
 				perror("msh: read: error al establecer variable de entorno.");
 				return 2;
@@ -321,7 +311,6 @@ int _read(char **cmd) {
 		index++;
         token = strtok(NULL, delimiters);
     }
-
     return 0;
 }
 
@@ -459,14 +448,17 @@ int new_command_process(int in, int out, char **cmd) {
 			close(out);
 		}
 
-		exit(execvp(cmd[0], (char* const*)cmd));
+		return execvp(cmd[0], (char* const*)cmd);
 	}
 
-	return pid;
+	//if (strcmp(cmd[0], "sleep") != 0) wait(&status);
+
+	return 0;
 }
 
 /*	Implementación de la cadena de mandatos.  */
-int commandPipeline (char ***argvv, int argvc) {
+int command_pipeline (char ***argvv, int argvc) {
+	pid_t child_pid;
 	int i;
 	int in;
 	int fd[2];
@@ -476,14 +468,13 @@ int commandPipeline (char ***argvv, int argvc) {
 	// ser ejecutados por el propio minishell.
 	int auxPipes[2];
 	pipe(auxPipes);
-	close(auxPipes[1]);
 
 	/* El primer proceso debe recibir su entrada del descriptor original 0. */
 	in = 0;
 
 	/* Aquí se genera el árbol de procesos y tuberías para cada comando
 	a excepción del último.  */
-	if (fork() == 0) {
+	if ((child_pid = fork()) == 0) {
 		for (i = 0; i < argvc-1; ++i) {
 			pipe(fd);
 			/* 	Aquí pasamos los siguientes argumentos:
@@ -511,18 +502,16 @@ int commandPipeline (char ***argvv, int argvc) {
 
 		// Si el último comando es interno, leer la tubería y enviar
 		// lo leido al preceso principal.
-		/*
-		if (strcmp(argvv[i][0], "cd") == 0 ||
-			strcmp(argvv[i][0], "umask") == 0 ||
-			strcmp(argvv[i][0], "time") == 0 ||
-			strcmp(argvv[i][0], "read") == 0) {
-				*/
 		if (is_internal(argvv[i][0]) == 0x0) {
 			char buf[MAX_LINE_LEN];
 			int bytes = read(0, buf, MAX_LINE_LEN);
+			
 			write(auxPipes[1],buf, bytes-1);
+			close(auxPipes[1]);
 			exit(EXIT_SUCCESS);
 		}
+
+
 		/* Ahora, el proceso actual correrá el último comando y retornará
 			el valor de la secuencia. */
 		if(execvp(argvv[i][0], (char* const*)argvv[i]) == -1)
@@ -530,6 +519,8 @@ int commandPipeline (char ***argvv, int argvc) {
 		else
 			exit(EXIT_SUCCESS);
 	}
+		
+	if (bg) set_bg_pid(child_pid);
 
 	int status;
 	wait(&status);
@@ -537,7 +528,7 @@ int commandPipeline (char ***argvv, int argvc) {
 	if (is_internal(argvv[argvc-1][0]) == 0x0) {
 		char buf[MAX_LINE_LEN] = "";
 		int bytes = read(auxPipes[0], buf, MAX_LINE_LEN);
-		printf("is internal...-%s-\n", buf);
+		
 		if (argvv[argvc-1][1] == NULL) {
 			argvv[argvc-1][1] = (char*) malloc (bytes * sizeof(char));
 		}
@@ -551,6 +542,7 @@ int commandPipeline (char ***argvv, int argvc) {
 	}
 	
 	close(auxPipes[0]);
+	close(auxPipes[1]);
 	return status;
 }
 
@@ -573,25 +565,25 @@ int command_selector(char ***argvv, int argvc) {
 			pid_t pid = fork();
             if (pid == 0) {
                 if(execvp(cmd[0], (char* const*)cmd) == -1)
-					exitHandler(EXIT_FAILURE);
-				else exitHandler(EXIT_SUCCESS);
+					exit(EXIT_FAILURE);
+				else exit(EXIT_SUCCESS);
             }
+
+			if (bg) set_bg_pid(pid);
 
 			int status;
 			wait(&status);
-
 			return status;
         }
     }
     else {
         // Tenemos una secuencia de comandos o una redirección.
-        return commandPipeline(argvv, argvc);
+        return command_pipeline(argvv, argvc);
     }
     return 0;
 }
 
-int main(void)
-{
+int main(void) {
 	char ***argvv = NULL;
 	int argvc;
 	char *filev[3] = { NULL, NULL, NULL };
@@ -655,18 +647,12 @@ int main(void)
 		if (bg) {
 			pid_t pid = fork();
 
-			if(pid == 0){
+			if (pid == 0) {
 				signal(SIGINT, SIG_IGN);
 				signal(SIGQUIT, SIG_IGN);
 
 				int status = command_selector(argvv, argvc);
 				exit(status);
-			}
-			else {
-				char bgpid[MAX_LINE_LEN];
-				sprintf(bgpid, "bgpid=%d", pid);
-				putenv(bgpid);
-				fprintf(stderr,"[%d]\n", pid);
 			}
 		}
 		else {
@@ -675,8 +661,6 @@ int main(void)
 			sprintf(var, "status=%d", status);
 			putenv(var);
 		}
-
-		//wait(&status);
 
 		if(filev[0]){
 			dup2(std_in,0);
@@ -694,6 +678,5 @@ int main(void)
 			close(std_err);
 		}
 	}
-	
 	return 0;
 }
