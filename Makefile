@@ -32,7 +32,7 @@ msh: $(OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJS)
 
 clean:
-	rm -f *.tab.? *.o *.bak *~ parser.c scanner.c core msh
+	rm -f *.tab.? *.o *.bak *~ parser.c scanner.c
 
 cleanall: clean
 	rm -f :* freefds* nofiles* killmyself* sigdfl*
